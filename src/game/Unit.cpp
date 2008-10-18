@@ -1519,10 +1519,7 @@ void Unit::CalcAbsorbResist(Unit *pVictim,SpellSchoolMask schoolMask, DamageEffe
             else
                 break;
         }
-        if (damagetype == DOT && m == 4)
-            *resist += uint32(damage - 1);
-        else
-            *resist += uint32(damage * m / 4);
+        *resist += uint32(damage * m / 4);
         if(*resist > damage)
             *resist = damage;
     }
