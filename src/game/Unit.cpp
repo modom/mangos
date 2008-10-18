@@ -1394,7 +1394,7 @@ uint32 Unit::SpellNonMeleeDamageLog(Unit *pVictim, uint32 spellID, uint32 damage
         uint32 absorb = 0;
         uint32 resist = 0;
 
-        CalcAbsorbResist(pVictim,GetSpellSchoolMask(spellInfo), SPELL_DIRECT_DAMAGE, damage, &absorb, &resist);
+        CalcAbsorbResist(pVictim,GetSpellSchoolMask(spellInfo), SPELL_DIRECT_DAMAGE, damage, &absorb, &resist, spellInfo);
 
         //No more damage left, target absorbed and/or resisted all damage
         if (damage > absorb + resist)
@@ -1489,24 +1489,18 @@ uint32 Unit::CalcArmorReducedDamage(Unit* pVictim, const uint32 damage)
     return (newdamage > 1) ? newdamage : 1;
 }
 
-void Unit::CalcAbsorbResist(Unit *pVictim,SpellSchoolMask schoolMask, DamageEffectType damagetype, const uint32 damage, uint32 *absorb, uint32 *resist)
+void Unit::CalcAbsorbResist(Unit *pVictim,SpellSchoolMask schoolMask, DamageEffectType damagetype, const uint32 damage, uint32 *absorb, uint32 *resist, SpellEntry const * spellInfo)
 {
     if(!pVictim || !pVictim->isAlive() || !damage)
         return;
 
-    // Magic damage, check for resists
-    if ((schoolMask & SPELL_SCHOOL_MASK_NORMAL)==0)
+    // magic damage, check for resists (ignore binary spells)
+    if ((schoolMask & SPELL_SCHOOL_MASK_NORMAL) == 0 &&
+        (!spellInfo || !IsBinarySpell(spellInfo)))
     {
-        // Get base victim resistance for school
-        float tmpvalue2 = (float)pVictim->GetResistance(GetFirstSchoolInMask(schoolMask));
-        // Ignore resistance by self SPELL_AURA_MOD_TARGET_RESISTANCE aura
-        tmpvalue2 += (float)GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_TARGET_RESISTANCE, schoolMask);
+        // get victim resistance to spell/damage
+        float tmpvalue2 = spellInfo ? ResistChanceCalc(pVictim, spellInfo) : ResistChanceCalc(pVictim, schoolMask, false);
 
-        tmpvalue2 *= (float)(0.15f / getLevel());
-        if (tmpvalue2 < 0.0f)
-            tmpvalue2 = 0.0f;
-        if (tmpvalue2 > 0.75f)
-            tmpvalue2 = 0.75f;
         uint32 ran = urand(0, 100);
         uint32 faq[4] = {24,6,4,6};
         uint8 m = 0;
@@ -2096,7 +2090,7 @@ void Unit::DoAttackDamage (Unit *pVictim, uint32 *damage, CleanDamage *cleanDama
     if(*victimState != VICTIMSTATE_BLOCKS)
     {
         MeleeDamageBonus(pVictim, damage,attType,spellCasted);
-        CalcAbsorbResist(pVictim, damageSchoolMask, DIRECT_DAMAGE, *damage-*blocked_amount, absorbDamage, resistDamage);
+        CalcAbsorbResist(pVictim, damageSchoolMask, DIRECT_DAMAGE, *damage-*blocked_amount, absorbDamage, resistDamage, spellCasted);
     }
 
     if (*absorbDamage) *hitInfo |= HITINFO_ABSORB;
@@ -2751,24 +2745,6 @@ SpellMissInfo Unit::MagicSpellHitResult(Unit *pVictim, SpellEntry const *spell)
     // Reduce spell hit chance for dispel mechanic spells from victim SPELL_AURA_MOD_DISPEL_RESIST
     if (IsDispelSpell(spell))
         modHitChance-=pVictim->GetTotalAuraModifier(SPELL_AURA_MOD_DISPEL_RESIST);
-    // Chance resist mechanic (select max value from every mechanic spell effect)
-    int32 resist_mech = 0;
-    // Get effects mechanic and chance
-    for(int eff = 0; eff < 3; ++eff)
-    {
-        int32 effect_mech = GetEffectMechanic(spell, eff);
-        if (effect_mech)
-        {
-            int32 temp = pVictim->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_MECHANIC_RESISTANCE, effect_mech);
-            if (resist_mech < temp)
-                resist_mech = temp;
-        }
-    }
-    // Apply mod
-    modHitChance-=resist_mech;
-
-    // Chance resist debuff
-    modHitChance-=pVictim->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_DEBUFF_RESISTANCE, int32(spell->Dispel));
 
     int32 HitChance = modHitChance * 100;
     // Increase hit chance from attacker SPELL_AURA_MOD_SPELL_HIT_CHANCE and attacker ratings
@@ -2784,6 +2760,103 @@ SpellMissInfo Unit::MagicSpellHitResult(Unit *pVictim, SpellEntry const *spell)
     uint32 rand = urand(0,10000);
     if (rand > HitChance)
         return SPELL_MISS_RESIST;
+    return SPELL_MISS_NONE;
+}
+
+float Unit::ResistChanceCalc(const Unit * pVictim, SpellSchoolMask schoolMask, bool binarySpell)
+{
+    // no victim / no school resist for physical spells/damage
+    if (!pVictim || (schoolMask & SPELL_SCHOOL_MASK_NORMAL))
+        return 0.0f;
+
+    // get base victim resistance to school
+    int32 resistance = pVictim->GetResistance(GetFirstSchoolInMask(schoolMask));
+
+    // ignore resistance by attackers SPELL_AURA_MOD_TARGET_RESISTANCE aura (spell penetration)
+    resistance += GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_TARGET_RESISTANCE, schoolMask);
+
+    // can't lower resistance below zero by spell penetration
+    if (resistance < 0)
+        resistance = 0;
+
+    const unsigned victimLevel = pVictim->getLevel();
+    unsigned attackLevel = getLevelForTarget(pVictim);
+
+    // don't add over-level resistance for binary spells
+    if (!binarySpell)
+    {
+        const int32 leveldiff = victimLevel - attackLevel;
+
+        // when victim has higher level than caster, increase its resistance
+        // this resistance is unavoidable by spell penetration
+        // to be confirmed: the constant here is subject of argue, values 5-8 are mentioned mostly
+        if (leveldiff > 0)
+            resistance += 5 * leveldiff;
+    }
+
+    // minimum caster level is 20
+    if (attackLevel < 20)
+        attackLevel = 20;
+
+    // get max effective resistance from attacker level
+    const unsigned maxResistance = 5 * attackLevel;
+
+    if (resistance > maxResistance)
+        resistance = maxResistance;
+
+    return 0.75f * ((float) resistance) / ((float) maxResistance);
+}
+
+float Unit::ResistChanceCalc(const Unit * pVictim, SpellEntry const * spellEntry)
+{
+    if (!pVictim || !spellEntry)
+        return 0.0f;
+
+    // chance to resist mechanic (select max value from every mechanic spell effect)
+    int32 chance = 0;
+    for (int eff = 0; eff < 3; ++eff)
+    {
+        if (int32 effect_mech = GetEffectMechanic(spellEntry, eff))
+        {
+            int32 temp = pVictim->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_MECHANIC_RESISTANCE, effect_mech);
+
+            // crowd control effect, base resistance 5%
+            // to be confirmed: is there really base resistance to CC mechanics ?
+            if ((1 << effect_mech) & IMMUNE_TO_MOVEMENT_IMPAIRMENT_AND_LOSS_CONTROL_MASK)
+                temp += 5;
+
+            if (chance < temp)
+                chance = temp;
+        }
+    }
+
+    // chance to resist debuff
+    chance += pVictim->GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_DEBUFF_RESISTANCE, int32(spellEntry->Dispel));
+
+    float resist = ((float) chance) / 100.0f;
+
+    resist += ResistChanceCalc(pVictim, SpellSchoolMask(spellEntry->SchoolMask), IsBinarySpell(spellEntry));
+
+    if (resist < 0.0f)
+        resist = 0.0f;
+    // to be confirmed: is it possible to become immune to some spells by stacking
+    // school, mechanic and debuff resistances ? shouldn't be 75% max ?
+    if (resist > 1.0f)
+        resist = 1.0f;
+
+    return resist;
+}
+
+SpellMissInfo Unit::SpellResistResult(Unit * pVictim, SpellEntry const * spell)
+{
+    // partially resistible spells are resisted elsewhere
+    if (!IsBinarySpell(spell))
+        return SPELL_MISS_NONE;
+
+    // only binary spells can be resisted during 'spell hit phase'
+    if (roll_chance_f(100.0f * ResistChanceCalc(pVictim, spell)))
+        return SPELL_MISS_RESIST;
+
     return SPELL_MISS_NONE;
 }
 
@@ -2857,19 +2930,24 @@ SpellMissInfo Unit::SpellHitResult(Unit *pVictim, SpellEntry const *spell, bool 
             return SPELL_MISS_NONE;
     }
 
+    SpellMissInfo hitResult = SPELL_MISS_NONE;
     // TODO need use this code for spell hit result calculation
     // now code commented for compotability
     switch (spell->DmgClass)
     {
         case SPELL_DAMAGE_CLASS_RANGED:
         case SPELL_DAMAGE_CLASS_MELEE:
-//             return MeleeSpellHitResult(pVictim, spell);
+//             hitResult = MeleeSpellHitResult(pVictim, spell);
             return SPELL_MISS_NONE;
         case SPELL_DAMAGE_CLASS_NONE:
         case SPELL_DAMAGE_CLASS_MAGIC:
-            return MagicSpellHitResult(pVictim, spell);
+            hitResult = MagicSpellHitResult(pVictim, spell);
     }
-    return SPELL_MISS_NONE;
+
+    if (hitResult != SPELL_MISS_NONE)
+        return hitResult;
+
+    return SpellResistResult(pVictim, spell);
 }
 
 float Unit::MeleeMissChanceCalc(const Unit *pVictim, WeaponAttackType attType) const

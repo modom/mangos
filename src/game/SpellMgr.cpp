@@ -486,6 +486,26 @@ bool IsPositiveSpell(uint32 spellId)
     return true;
 }
 
+// checks whether spell is binary (can be either hit or full resist)
+/* To be confirmed (and fixed):
+    I think that spells with at least one mechanic set are binary.
+    But Blizz officially divides spells into 'direct damage' and 'other' (binary).
+    Maybe the decision on spell binarity should be decided by its effects - thus it is
+    partially resistibe if and only if all effect are damage effects ?
+    Or there might be some attribute that marks spells as binary or partially resistible ...
+*/
+bool IsBinarySpell(SpellEntry const * spellInfo)
+{
+    if (!spellInfo)
+        return true;
+
+    for (int i = 0; i < 3; i++)
+        if (GetEffectMechanic(spellInfo, i))
+            return true;
+
+    return false;
+}
+
 bool IsSingleTargetSpell(SpellEntry const *spellInfo)
 {
     // all other single target spells have if it has AttributesEx5

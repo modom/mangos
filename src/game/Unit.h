@@ -845,6 +845,9 @@ class MANGOS_DLL_SPEC Unit : public WorldObject
 
         float MeleeMissChanceCalc(const Unit *pVictim, WeaponAttackType attType) const;
         SpellMissInfo MagicSpellHitResult(Unit *pVictim, SpellEntry const *spell);
+        float ResistChanceCalc(const Unit * pVictim, SpellSchoolMask schoolMask, bool binarySpell);
+        float ResistChanceCalc(const Unit * pVictim, SpellEntry const * spellEntry);
+        SpellMissInfo SpellResistResult(Unit * pVictim, SpellEntry const * spell);
         SpellMissInfo SpellHitResult(Unit *pVictim, SpellEntry const *spell, bool canReflect = false);
 
         float GetUnitDodgeChance()    const;
@@ -1196,7 +1199,7 @@ class MANGOS_DLL_SPEC Unit : public WorldObject
                                                             // redefined in Creature
 
         uint32 CalcArmorReducedDamage(Unit* pVictim, const uint32 damage);
-        void CalcAbsorbResist(Unit *pVictim, SpellSchoolMask schoolMask, DamageEffectType damagetype, const uint32 damage, uint32 *absorb, uint32 *resist);
+        void CalcAbsorbResist(Unit *pVictim, SpellSchoolMask schoolMask, DamageEffectType damagetype, const uint32 damage, uint32 *absorb, uint32 *resist, SpellEntry const * spellInfo);
 
         void  UpdateSpeed(UnitMoveType mtype, bool forced);
         float GetSpeed( UnitMoveType mtype ) const;

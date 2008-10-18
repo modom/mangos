@@ -320,6 +320,12 @@ bool IsPositiveSpell(uint32 spellId);
 bool IsPositiveEffect(uint32 spellId, uint32 effIndex);
 bool IsPositiveTarget(uint32 targetA, uint32 targetB);
 
+bool IsBinarySpell(SpellEntry const * spellInfo);
+inline bool IsBinarySpell(uint32 spellId)
+{
+    return IsBinarySpell(sSpellStore.LookupEntry(spellId));
+}
+
 bool IsSingleTargetSpell(SpellEntry const *spellInfo);
 bool IsSingleTargetSpells(SpellEntry const *spellInfo1, SpellEntry const *spellInfo2);
 
