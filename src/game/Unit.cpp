@@ -1412,7 +1412,7 @@ uint32 Unit::SpellNonMeleeDamageLog(Unit *pVictim, uint32 spellID, uint32 damage
             }
 
             //Send resist
-            SendAttackStateUpdate(HitInfo, pVictim, 1, GetSpellSchoolMask(spellInfo), damage, absorb,resist,VICTIMSTATE_NORMAL,0);
+            SendAttackStateUpdate(HitInfo, pVictim, 1, GetSpellSchoolMask(spellInfo), 0, absorb,resist,VICTIMSTATE_NORMAL,0);
             return 0;
         }
 
@@ -2225,16 +2225,16 @@ void Unit::AttackerStateUpdate (Unit *pVictim, WeaponAttackType attType, bool ex
 
     if (hitInfo & HITINFO_MISS)
         //send miss
-        SendAttackStateUpdate (hitInfo, pVictim, 1, meleeSchoolMask, damage, absorbed_dmg, resisted_dmg, victimState, blocked_dmg);
+        SendAttackStateUpdate (hitInfo, pVictim, 1, meleeSchoolMask, 0, 0, 0, victimState, 0);
     else
     {
-        //do animation
-        SendAttackStateUpdate (hitInfo, pVictim, 1, meleeSchoolMask, damage, absorbed_dmg, resisted_dmg, victimState, blocked_dmg);
-
         if (damage > (absorbed_dmg + resisted_dmg + blocked_dmg))
             damage -= (absorbed_dmg + resisted_dmg + blocked_dmg);
         else
             damage = 0;
+
+        //do animation
+        SendAttackStateUpdate (hitInfo, pVictim, 1, meleeSchoolMask, damage, absorbed_dmg, resisted_dmg, victimState, blocked_dmg);
 
         DealDamage (pVictim, damage, &cleanDamage, DIRECT_DAMAGE, meleeSchoolMask, NULL, true);
 
@@ -4343,7 +4343,7 @@ void Unit::SendSpellNonMeleeDamageLog(Unit *target,uint32 SpellID,uint32 Damage,
     data.append(target->GetPackGUID());
     data.append(GetPackGUID());
     data << uint32(SpellID);
-    data << uint32(Damage-AbsorbedDamage-Resist-Blocked);
+    data << uint32(Damage);
     data << uint8(damageSchoolMask);                        // spell school
     data << uint32(AbsorbedDamage);                         // AbsorbedDamage
     data << uint32(Resist);                                 // resist
@@ -4377,15 +4377,15 @@ void Unit::SendAttackStateUpdate(uint32 HitInfo, Unit *target, uint8 SwingType, 
     data << (uint32)HitInfo;
     data.append(GetPackGUID());
     data.append(target->GetPackGUID());
-    data << (uint32)(Damage-AbsorbDamage-Resist-BlockedAmount);
+    data << (uint32)Damage;
 
     data << (uint8)SwingType;                               // count?
 
     // for(i = 0; i < SwingType; ++i)
     data << (uint32)damageSchoolMask;
-    data << (float)(Damage-AbsorbDamage-Resist-BlockedAmount);
+    data << (float)Damage;
     // still need to double check damage
-    data << (uint32)(Damage-AbsorbDamage-Resist-BlockedAmount);
+    data << (uint32)Damage;
     data << (uint32)AbsorbDamage;
     data << (uint32)Resist;
     // end loop
